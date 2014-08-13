@@ -35,6 +35,7 @@ from bpy.app.handlers import persistent
 '''
 TODO
     Make sure tile size is similar to the target (can sometimes be way off with strange resolutions)
+    When using a very narrow border region, it wrongly detects that there are not enough threads.
 '''
 
 
@@ -127,10 +128,8 @@ def do_set_tile_size(context, report=_report_print):
     scene.TileSizePrevDevice = device
     if scene.TileSizeClosestFactor:
         if isprime(xres):
-        #if (xres % 2):
             xres += 1
         if isprime(yres):
-        #if (yres % 2):
             yres += 1
         xfactors = list(xres/z for z in range (1, xres) if xres/z % 1 == 0) # get factors
         yfactors = list(yres/z for z in range (1, yres) if yres/z % 1 == 0) # get factors
@@ -147,9 +146,6 @@ def do_set_tile_size(context, report=_report_print):
         scene.TileSizeThreadsError = True
     else:
         scene.TileSizeThreadsError = False
-
-    # TODO Detect if the tile isn't very square
-    #if (xtile/ytile > 2) or (xtile/ytile < 0.5): # if not very square tile
 
 
     scene.render.tile_x = xtile
