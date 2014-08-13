@@ -18,10 +18,10 @@
 
 bl_info = {
     "name": "Auto Render Tile Size",
-    "description": "Automatically calculate the tile size that renders the fastest for Cycles",
+    "description": "Estimate the tile size that will render the fastest",
     "author": "Greg Zaal",
-    "version": (2, 2),
-    "blender": (2, 68, 5),
+    "version": (2, 3),
+    "blender": (2, 71, 0),
     "location": "Render Settings > Performance",
     "warning": "",
     "wiki_url": "http://wiki.blender.org/index.php?title=Extensions:2.6/Py/Scripts/Render/Auto_Tile_Size",
@@ -30,6 +30,12 @@ bl_info = {
 
 import bpy
 from bpy.app.handlers import persistent
+
+
+'''
+TODO
+    Make sure tile size is similar to the target (can sometimes be way off with strange resolutions)
+'''
 
 
 # dummy report function
@@ -64,16 +70,21 @@ def on_scene_update(context, report=_report_print):
     actual_ts = str(scene.render.tile_x)+'x'+str(scene.render.tile_y)
     prevactual_ts = scene.TileSizePrevActualTileSize
 
+    actual_border = (str(scene.render.border_min_x)+"x"+str(scene.render.border_min_y))+'-'+(str(scene.render.border_max_x)+"x"+str(scene.render.border_max_y))
+    prev_border = scene.TileSizePrevBorderRes
+
     # detect relevant changes in scene
     change_triggers = [renderer != prevrenderer,
                        device != prevdevice,
                        int(choice) != prevchoice,
                        res != prevres,
+                       actual_border != prev_border,
                        actual_ts != prevactual_ts]
     if any(change_triggers) and scene.TileSizeEnable:
         scene.TileSizePrevRenderer = renderer
         scene.TileSizePrevDevice = device
         scene.TileSizePrevChoice = choice
+        scene.TileSizePrevBorderRes = actual_border
         do_set_tile_size(context, report=_report_print)
     else:
         pass
@@ -95,6 +106,12 @@ def do_set_tile_size(context, report=_report_print):
     target = 0
     xres = int(getActualRes('x'))
     yres = int(getActualRes('y'))
+    realxres = xres
+    realyres = yres
+
+    if context.scene.render.use_border:
+        xres = int(xres * (context.scene.render.border_max_x - context.scene.render.border_min_x))
+        yres = int(yres * (context.scene.render.border_max_y - context.scene.render.border_min_y))
 
     if (device == 'GPU' and context.user_preferences.system.compute_device_type != 'NONE') and scene.render.engine == 'CYCLES':
         target = int(scene.TileSizeGPUChoice)
@@ -125,13 +142,20 @@ def do_set_tile_size(context, report=_report_print):
         ytile = target
         report({'INFO'}, str(xtile) + "x" + str(ytile) + " (" + str(xres / xtile) + " x " + str(yres / ytile) + " tiles)")
 
+    # Detect if there are fewer tiles than available threads
+    if (int(xres / xtile) * int(yres / ytile) < scene.render.threads) and device != 'GPU':
+        scene.TileSizeThreadsError = True
+    else:
+        scene.TileSizeThreadsError = False
+
+    # TODO Detect if the tile isn't very square
     #if (xtile/ytile > 2) or (xtile/ytile < 0.5): # if not very square tile
 
 
     scene.render.tile_x = xtile
     scene.render.tile_y = ytile
 
-    scene.TileSizePrevRes = str(xres)+'x'+str(yres)
+    scene.TileSizePrevRes = str(realxres)+'x'+str(realyres)
     scene.TileSizePrevActualTileSize = str(scene.render.tile_x)+'x'+str(scene.render.tile_y)
 
     return True
@@ -197,6 +221,9 @@ def ui_layout(renderer, layout, context):
         if (scene.render.tile_x/scene.render.tile_y > 2) or (scene.render.tile_x/scene.render.tile_y < 0.5): # if not very square tile
             col.label (text="Warning: Tile size is not very square", icon='ERROR')
             col.label (text="    Try a slightly different resolution")
+            col.label (text="    or disable Consistent Tiles")
+        if scene.TileSizeThreadsError:
+            col.label (text="Warning: There are fewer tiles than render threads", icon='ERROR')
 
 
 def menu_func_cycles(self, context):
@@ -279,6 +306,13 @@ def register():
         name="prevres",
         default='prevres',
         description="prevres")
+    bpy.types.Scene.TileSizePrevBorderRes = bpy.props.StringProperty(
+        name="prevborder",
+        default="prevborder",
+        description="prevborder")
+    bpy.types.Scene.TileSizeThreadsError = bpy.props.BoolProperty(
+        name="ThreadsError",
+        description="ThreadsError")
     bpy.types.Scene.TileSizePrevActualTileSize = bpy.props.StringProperty(
         name="prevres",
         default='prevres',
@@ -306,6 +340,8 @@ def unregister():
     del bpy.types.Scene.TileSizePrevRenderer
     del bpy.types.Scene.TileSizePrevDevice
     del bpy.types.Scene.TileSizePrevRes
+    del bpy.types.Scene.TileSizePrevBorderRes
+    del bpy.types.Scene.TileSizeThreadsError
     del bpy.types.Scene.TileSizePrevActualTileSize
     del bpy.types.Scene.TileSizeAdvancedUI
 
