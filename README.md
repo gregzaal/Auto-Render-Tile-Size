@@ -1,3 +1,7 @@
+**This add-on is no longer maintained here. It is available in the official Blender add-on repo.**
+
+---
+
 Auto-Render-Tile-Size
 =====================
 
